@@ -94,8 +94,13 @@ end
 def info name
   require 'formula'
 
-  history="http://github.com/mxcl/homebrew/commits/masterbrew/Library/Formula/#{Formula.path(name).basename}"
-  exec 'open', history if ARGV.flag? '--github'
+  if ARGV.flag? '--github'
+    # if forked, open correct github page 
+    user = `cd #{HOMEBREW_PREFIX}; git remote -v show`.scan(/github.com:(.*)\/.*fetch/).to_s 
+    user = 'mxcl' if user.empty?
+    history="http://github.com/#{user}/homebrew/commits/masterbrew/Library/Formula/#{Formula.path(name).basename}"
+    exec 'open', history
+  end
 
   f=Formula.factory name
   puts "#{f.name} #{f.version}"
