@@ -1,9 +1,10 @@
 #!/usr/bin/ruby
+# -*- coding: utf-8 -*-
 $:.unshift ENV['RUBYLIB']=File.expand_path(__FILE__+'/../../Library/Homebrew')
-
 require 'pathname+yeast'
 require 'ARGV+yeast'
 require 'utils'
+require 'hardware'
 require 'brew.h'
 
 if Process.uid == 0
@@ -14,27 +15,28 @@ else
   HOMEBREW_CACHE=Pathname.new("~/Library/Caches/Homebrew").expand_path
 end
 
-HOMEBREW_PREFIX=Pathname.new(__FILE__).dirname.parent.cleanpath
+HOMEBREW_PREFIX=(Pathname.getwd+__FILE__).dirname.parent.cleanpath
 HOMEBREW_CELLAR=HOMEBREW_PREFIX+'Cellar'
 HOMEBREW_VERSION='0.4'
 HOMEBREW_WWW='http://bit.ly/Homebrew'
 HOMEBREW_USER_AGENT="Homebrew #{HOMEBREW_VERSION} (Ruby #{VERSION}; Mac OS X 10.5 Leopard)"
 
-if %w[/ /usr].include? HOMEBREW_PREFIX.to_s then abort <<-troba
-You have placed Homebrew at the prefix: #{HOMEBREW_PREFIX}
-This is not currently supported. Voice your support for this feature at:
-#{HOMEBREW_WWW}
-troba
+if %w[/ /usr].include? HOMEBREW_PREFIX.to_s then abort <<-EOS
+  You have placed Homebrew at the prefix: #{HOMEBREW_PREFIX}
+  This is not currently supported. Voice your support for this feature at:
+  #{HOMEBREW_WWW}
+  EOS
 end
-
 if `sw_vers -productVersion` =~ /10\.(\d)\.(\d+)/ and $1.to_i < 5
   onoe "Homebrew requires Leopard or higher"
   abort "But thanks for your interest anyway!"
 end
-
-# Pathname often throws if CWD doesn't exist
-Dir.chdir '/' unless File.directory? ENV['PWD']
-
+if Hardware.cpu_type == :ppc or Hardware.cpu_type == :dunno
+  abort "Sorry, Homebrew does not support your computer's CPU architecture."
+end
+unless system "which gcc-4.2 &> /dev/null" and $?.success?
+  abort "Sorry, Homebrew requires gcc 4.2, which is provided by Xcode 3.1"
+end
 
 begin
   case ARGV.shift
@@ -71,11 +73,26 @@ begin
       if ARGV.named_empty?
         # TODO I tried to columnise it using the 'column' utility but it uses
         # tabs rather than spaces and the output looked wrong
-        puts "Available formulae:"
-        (HOMEBREW_PREFIX+'Library'+'Formula').children.each {|f| puts f.basename('.rb') }
+        puts "You must specify a formula. The following are available:" unless ARGV.quieter?
+        (HOMEBREW_PREFIX+'Library'+'Formula').children.sort.each do |f|
+          puts f.basename('.rb')
+        end
         exit 0
       end
+
+      require 'brewkit'
+
+      if ARGV.verbose?
+        ohai "Build Environment"
+        %w[CFLAGS LDFLAGS CPPFLAGS MAKEFLAGS CC CXX].each do |f|
+          puts "#{f}: #{ENV[f]}" unless ENV[f].to_s.empty?
+        end
+      end
       
+      unless system "which #{ENV['CC'] or 'cc'} &> /dev/null" and $?.success?
+        raise "We cannot find a c compiler, have you installed the latest Xcode?"
+      end
+
       # we need to ensure a pristine ENV for each process or the formula
       # will start with the ENV from the previous build
       ARGV.formulae.each do |f|
@@ -94,9 +111,8 @@ begin
       require 'keg'
       f=ARGV.formulae.shift
       raise "#{f.name} is already installed" if f.installed? unless ARGV.force?
-      BEGINNING=Time.now
       begin
-        install f
+        build_time=install f
         ohai "Caveats", f.caveats, ''
         ohai 'Finishing up'
         clean f
@@ -106,7 +122,9 @@ begin
         f.prefix.rmtree if f.prefix.directory?
         raise
       end
-      puts "#{f.prefix}: #{f.prefix.abv}, built in #{pretty_duration Time.now-BEGINNING}"
+      print "#{f.prefix}: #{f.prefix.abv}"
+      print ", built in #{pretty_duration build_time}" if build_time
+      puts
 
     when 'ln', 'link'
       ARGV.kegs.each {|keg| puts "#{keg.link} links created for #{keg}"}

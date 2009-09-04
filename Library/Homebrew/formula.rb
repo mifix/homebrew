@@ -80,6 +80,7 @@ class Formula
   def bin; prefix+'bin' end
   def sbin; prefix+'sbin' end
   def doc; prefix+'share'+'doc'+name end
+  def etc; prefix+'etc' end
   def lib; prefix+'lib' end
   def libexec; prefix+'libexec' end
   def man; prefix+'share'+'man' end
@@ -93,6 +94,7 @@ class Formula
       when %r[^svn://] then SubversionDownloadStrategy
       when %r[^git://] then GitDownloadStrategy
       when %r[^http://(.+?\.)?googlecode\.com/svn] then SubversionDownloadStrategy
+      when %r[^http://svn.apache.org/repos/] then SubversionDownloadStrategy
       else HttpDownloadStrategy
     end
   end

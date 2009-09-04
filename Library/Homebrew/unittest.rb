@@ -3,12 +3,16 @@
 # support, and with no warranty, express or implied, as to its usefulness for
 # any purpose.
 
-$:.unshift File.dirname(__FILE__)
+ABS__FILE__=File.expand_path(__FILE__)
+
+$:.unshift File.dirname(ABS__FILE__)
 require 'pathname+yeast'
 require 'formula'
 require 'download_strategy'
 require 'keg'
 require 'utils'
+require 'brew.h'
+require 'hardware.rb'
 
 # these are defined in bin/brew, but we don't want to break our actual
 # homebrew tree, and we do want to test everything :)
@@ -17,9 +21,10 @@ HOMEBREW_CACHE=HOMEBREW_PREFIX.parent+"cache"
 HOMEBREW_CELLAR=HOMEBREW_PREFIX.parent+"cellar"
 HOMEBREW_USER_AGENT="Homebrew"
 
-HOMEBREW_CELLAR.mkpath
-raise "HOMEBREW_CELLAR couldn't be created!" unless HOMEBREW_CELLAR.directory?
+(HOMEBREW_PREFIX+'Library'+'Formula').mkpath
+Dir.chdir HOMEBREW_PREFIX
 at_exit { HOMEBREW_PREFIX.parent.rmtree }
+
 require 'test/unit' # must be after at_exit
 require 'ARGV+yeast' # needs to be after test/unit to avoid conflict with OptionsParser
 
@@ -37,7 +42,7 @@ end
 
 class TestBall <Formula
   def initialize
-    @url="file:///#{Pathname.new(__FILE__).parent.realpath}/testball-0.1.tbz"
+    @url="file:///#{Pathname.new(ABS__FILE__).parent.realpath}/testball-0.1.tbz"
     super "testball"
   end
   def install
@@ -49,7 +54,7 @@ end
 class TestZip <Formula
   def initialize
     zip=HOMEBREW_CACHE.parent+'test-0.1.zip'
-    Kernel.system 'zip', '-0', zip, __FILE__
+    Kernel.system 'zip', '-0', zip, ABS__FILE__
     @url="file://#{zip}"
     super 'testzip'
   end
@@ -76,7 +81,7 @@ class TestBallOverrideBrew <Formula
 end
 
 class TestScriptFileFormula <ScriptFileFormula
-  @url="file:///#{Pathname.new(__FILE__).realpath}"
+  @url="file:///#{Pathname.new(ABS__FILE__).realpath}"
   @version="1"
   
   def initialize
@@ -326,5 +331,84 @@ class BeerTasting <Test::Unit::TestCase
   def test_ruby_version_style
     f=MockFormula.new 'ftp://ftp.ruby-lang.org/pub/ruby/1.9/ruby-1.9.1-p243.tar.gz'
     assert_equal '1.9.1-p243', f.version
+  end
+  
+  # these will raise if we don't recognise your mac, but that prolly 
+  # indicates something went wrong rather than we don't know
+  def test_hardware_cpu_type
+    assert [:intel, :ppc].include?(Hardware.cpu_type)
+  end
+  
+  def test_hardware_intel_family
+    if Hardware.cpu_type == :intel
+      assert [:core, :core2, :penryn, :nehalem].include?(Hardware.intel_family)
+    end
+  end
+  
+  def test_brew_h
+    nostdout do
+      assert_nothing_raised do
+        f=TestBall.new
+        make 'http://example.com/testball-0.1.tbz'
+        info f.name
+        clean f
+        prune
+        #TODO test diy function too
+      end
+    end
+  end
+  
+  def test_my_float_assumptions
+    # this may look ridiculous but honestly there's code in brewit that depends on 
+    # this behaviour so I wanted to be certain Ruby floating points are behaving
+    f='10.6'.to_f
+    assert_equal 10.6, f
+    assert f >= 10.6
+    assert f <= 10.6
+    assert_equal 10.5, f-0.1
+    assert_equal 10.7, f+0.1
+  end
+
+  def test_pathname_plus_yeast
+    nostdout do
+      assert_nothing_raised do
+        assert !Pathname.getwd.rmdir_if_possible
+        assert !Pathname.getwd.abv.empty?
+        
+        abcd=orig_abcd=HOMEBREW_CACHE+'abcd'
+        FileUtils.cp ABS__FILE__, abcd
+        abcd=HOMEBREW_PREFIX.install abcd
+        assert (HOMEBREW_PREFIX+orig_abcd.basename).exist?
+        assert abcd.exist?
+        assert_equal HOMEBREW_PREFIX+'abcd', abcd
+
+        assert_raises(RuntimeError) {abcd.write 'CONTENT'}
+        abcd.unlink
+        abcd.write 'HELLOWORLD'
+        assert_equal 'HELLOWORLD', File.read(abcd)
+        
+        assert !orig_abcd.exist?
+        rv=abcd.cp orig_abcd
+        assert orig_abcd.exist?
+        assert_equal rv, orig_abcd
+
+        orig_abcd.unlink
+        assert !orig_abcd.exist?
+        abcd.cp HOMEBREW_CACHE
+        assert orig_abcd.exist?
+
+        foo1=HOMEBREW_CACHE+'foo-0.1.tar.gz'
+        FileUtils.cp ABS__FILE__, foo1
+        assert foo1.file?
+        
+        assert_equal '.tar.gz', foo1.extname
+        assert_equal 'foo-0.1', foo1.stem
+        assert_equal '0.1', foo1.version
+        
+        HOMEBREW_CACHE.chmod_R 0777
+      end
+    end
+    
+    assert_raises(RuntimeError) {Pathname.getwd.install 'non_existant_file'}
   end
 end

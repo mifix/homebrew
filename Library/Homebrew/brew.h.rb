@@ -45,7 +45,7 @@ def make url
   cmake       end
   cmake
               def install
-  autotools     system "./configure --prefix='\#{prefix}' --disable-debug --disable-dependency-tracking"
+  autotools     system "./configure", "--prefix=\#{prefix}", "--disable-debug", "--disable-dependency-tracking"
   cmake         system "cmake . \#{cmake_std_parameters}"
                 system "make install"
               end
@@ -94,13 +94,13 @@ end
 def info name
   require 'formula'
 
-  if ARGV.flag? '--github'
-    # if forked, open correct github page 
-    user = `cd #{HOMEBREW_PREFIX}; git remote -v show`.scan(/github.com:(.*)\/.*fetch/).to_s 
-    user = 'mxcl' if user.empty?
-    history="http://github.com/#{user}/homebrew/commits/masterbrew/Library/Formula/#{Formula.path(name).basename}"
-    exec 'open', history
-  end
+  user=''
+  user=`git config --global github.user`.chomp if system "which git > /dev/null"
+  user='mxcl' if user.empty?
+  # FIXME it would be nice if we didn't assume the default branch is masterbrew
+  history="http://github.com/#{user}/homebrew/commits/masterbrew/Library/Formula/#{Formula.path(name).basename}"
+
+  exec 'open', history if ARGV.flag? '--github'
 
   f=Formula.factory name
   puts "#{f.name} #{f.version}"
@@ -151,16 +151,19 @@ def install f
       puts "Type `exit' to return and finalize the installation"
       puts "Install to this prefix: #{f.prefix}"
       interactive_shell
+      nil
     elsif ARGV.include? '--help'
       system './configure --help'
       exit $?
     else
       f.prefix.mkpath
+      beginning=Time.now
       f.install
       %w[README ChangeLog COPYING LICENSE COPYRIGHT AUTHORS].each do |file|
         FileUtils.mv "#{file}.txt", file rescue nil
         f.prefix.install file rescue nil
       end
+      return Time.now-beginning
     end
   end
 end
@@ -238,11 +241,13 @@ class Cleaner
     
     [f.bin, f.sbin, f.lib].each {|d| clean_dir d}
     
-    # you can read all of this shit online nowadays, save the space
-    # info pages are shit, everyone agrees apart from Richard Stallman
+    # you can read all of this stuff online nowadays, save the space
+    # info pages are pants, everyone agrees apart from Richard Stallman
+    # feel free to ask for build options though! http://bit.ly/Homebrew
     (f.prefix+'share'+'doc').rmtree rescue nil
     (f.prefix+'share'+'info').rmtree rescue nil
     (f.prefix+'doc').rmtree rescue nil
+    (f.prefix+'docs').rmtree rescue nil
     (f.prefix+'info').rmtree rescue nil
   end
 
@@ -255,7 +260,7 @@ private
       `strip #{args} #{path}`
     else
       # strip unlinks the file and recreates it, thus breaking hard links!
-      # is this expected behaviour? patch does it too… still,mktm this fixes it
+      # is this expected behaviour? patch does it too… still, this fixes it
       tmp=`mktemp -t #{path.basename}`.strip
       `strip #{args} -o #{tmp} #{path}`
       `cat #{tmp} > #{path}`
@@ -266,13 +271,13 @@ private
   def clean_file path
     perms=0444
     case `file -h #{path}`
-      when /Mach-O dynamically linked shared library/
-        strip path, '-SxX'
-      when /Mach-O [^ ]* ?executable/
-        strip path
-        perms=0544
-      when /script text executable/
-        perms=0544
+    when /Mach-O dynamically linked shared library/
+      strip path, '-SxX'
+    when /Mach-O [^ ]* ?executable/
+      strip path
+      perms=0555
+    when /script text executable/
+      perms=0555
     end
     path.chmod perms
   end
