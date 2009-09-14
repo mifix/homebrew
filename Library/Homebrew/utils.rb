@@ -25,6 +25,7 @@
 def ohai title, *args
   return if args.length > 0 and args[0].nil?
   n=`tput cols`.strip.to_i-4
+  n=title.length if ARGV.verbose?
   puts "\033[0;34m==>\033[0;0;1m #{title[0,n]}\033[0;0m"
   args.each do |arg|
     return if arg.nil?
@@ -34,7 +35,7 @@ end
 
 # shows a warning in delicious pink
 def opoo warning
-  puts "\033[1;35m==>\033[0;0;1m Warning\033[0;0m: #{warning}"
+  puts "\033[1;35m==>\033[0;0;1m Warning!\033[0;0m #{warning}"
 end
 
 def onoe error
@@ -63,13 +64,59 @@ end
 # Kernel.system but with exceptions
 def safe_system cmd, *args
   puts "#{cmd} #{args*' '}" if ARGV.verbose?
-
-  execd=Kernel.system cmd, *args
-  # somehow Ruby doesn't handle the CTRL-C from another process -- WTF!?
+  exec_success=Kernel.system cmd, *args
+  # some tools, eg. tar seem to confuse ruby and it doesn't propogate the
+  # CTRL-C interrupt to us too, so execution continues, but the exit code os
+  # still 2 so we raise our own interrupt
   raise Interrupt, cmd if $?.termsig == 2
-  raise ExecutionError.new(cmd, args) unless execd and $? == 0
+  unless exec_success and $?.success?
+    puts "Exit code: #{$?}"
+    raise ExecutionError.new(cmd, args)
+  end 
 end
 
 def curl url, *args
   safe_system 'curl', '-f#LA', HOMEBREW_USER_AGENT, url, *args
+end
+
+def puts_columns items, cols = 4
+  items = items.join("\n") if items.is_a?(Array)
+  width=`stty size`.chomp.split(" ").last
+  IO.popen("pr -#{cols} -t", "w"){|io| io.write(items) }
+end
+
+def exec_editor *args
+  editor=ENV['EDITOR']
+  if editor.nil?
+    if system "which -s mate" and $?.success?
+      editor='mate'
+    else
+      editor='vim'
+    end
+  end
+  # we split the editor because especially on mac "mate -w" is common
+  # but we still want to use the comma-delimited version of exec because then
+  # we don't have to escape args, and escaping 100% is tricky
+  exec *(editor.split+args)
+end
+
+# provide an absolute path to a command or this function will search the PATH
+def arch_for_command cmd
+    archs = []
+    cmd = `which #{cmd}` if not Pathname.new(cmd).absolute?
+
+    IO.popen("file #{cmd}").readlines.each do |line|
+      case line
+      when /Mach-O executable ppc/
+        archs << :ppc7400
+      when /Mach-O 64-bit executable ppc64/
+        archs << :ppc64
+      when /Mach-O executable i386/
+        archs << :i386
+      when /Mach-O 64-bit executable x86_64/
+        archs << :x86_64
+      end
+    end
+
+    return archs
 end

@@ -40,12 +40,11 @@ ENV['MACOSX_DEPLOYMENT_TARGET']=$1
 # ignore existing build vars, thus we should have less bugs to deal with
 ENV['LDFLAGS']=""
 
-cflags=%w[-O3]
-
 # optimise all the way to eleven, references:
 # http://en.gentoo-wiki.com/wiki/Safe_Cflags/Intel
 # http://forums.mozillazine.org/viewtopic.php?f=12&t=577299
 # http://gcc.gnu.org/onlinedocs/gcc-4.2.1/gcc/i386-and-x86_002d64-Options.html
+cflags=[]
 if MACOS_VERSION >= 10.6
   case Hardware.intel_family
   when :penryn, :core2
@@ -80,7 +79,8 @@ end
 
 # -w: keep signal to noise high
 # -fomit-frame-pointer: we are not debugging this software, we are using it
-ENV['CFLAGS']=ENV['CXXFLAGS']="#{cflags*' '} -w -pipe -fomit-frame-pointer -mmacosx-version-min=#{MACOS_VERSION}"
+BREWKIT_SAFE_FLAGS="-w -pipe -fomit-frame-pointer -mmacosx-version-min=#{MACOS_VERSION}"
+ENV['CFLAGS']=ENV['CXXFLAGS']="-O3 #{cflags*' '} #{BREWKIT_SAFE_FLAGS}"
 
 # compile faster
 ENV['MAKEFLAGS']="-j#{Hardware.processor_count}"
@@ -111,12 +111,24 @@ module HomebrewEnvExtension
     remove_from_cflags '-msse4.1'
     remove_from_cflags '-msse4.2'
   end
+  def llvm_gcc
+    if (10.6..11.0).include?(MACOS_VERSION)
+      self['CC']='/Developer/usr/llvm-gcc-4.2/bin/llvm-gcc-4.2'
+      self['CXX']='/Developer/usr/llvm-gcc-4.2/bin/llvm-g++-4.2'
+    else
+      raise "LLVM support is only available on 10.6+"
+    end
+  end
   def osx_10_4
     self['MACOSX_DEPLOYMENT_TARGET']=nil
     remove_from_cflags(/ ?-mmacosx-version-min=10\.\d/)
   end
-  def generic_i386
-     %w[-mfpmath=sse -msse3 -mmmx -march=\w+].each {|s| remove_from_cflags s}
+  def minimal_optimization
+    self['CFLAGS']=self['CXXFLAGS']="-Os #{BREWKIT_SAFE_FLAGS}"
+    
+  end
+  def no_optimization
+    self['CFLAGS']=self['CXXFLAGS']=BREWKIT_SAFE_FLAGS
   end
   def libxml2
     append_to_cflags ' -I/usr/include/libxml2'
