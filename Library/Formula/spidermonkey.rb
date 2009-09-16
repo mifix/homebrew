@@ -12,16 +12,29 @@ class Spidermonkey <Formula
   end
 
   def patches
-    ["http://gist.github.com/raw/179415/eed70f1b4bae73fb92995eaf07870d40c0ceb03e/gistfile1.diff"]
+    DATA
   end
 
   def install
     ENV.j1
     Dir.chdir "src" do
-      system "make JS_DIST=#{HOMEBREW_PREFIX} JS_THREADSAFE=1 -f Makefile.ref"
+      system "make JS_DIST=#{HOMEBREW_PREFIX} JS_THREADSAFE=1 DEFINES=-DJS_C_STRINGS_ARE_UTF8 -f Makefile.ref"
       system "make JS_DIST=#{prefix} -f Makefile.ref export"
       system "ranlib #{prefix}/lib/libjs.a"
     end
   end
 end
 
+
+__END__
+--- a/src/jsprf.c	2009-07-26 12:32:01.000000000 -0700
++++ b/src/jsprf.c	2009-07-26 12:33:12.000000000 -0700
+@@ -58,6 +58,8 @@
+ */
+ #ifdef HAVE_VA_COPY
+ #define VARARGS_ASSIGN(foo, bar)        VA_COPY(foo,bar)
++#elif defined(va_copy)
++#define VARARGS_ASSIGN(foo, bar)        va_copy(foo,bar)
+ #elif defined(HAVE_VA_LIST_AS_ARRAY)
+ #define VARARGS_ASSIGN(foo, bar)        foo[0] = bar[0]
+ #else
