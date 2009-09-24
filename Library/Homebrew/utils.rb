@@ -22,15 +22,10 @@
 #  THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 # args are additional inputs to puts until a nil arg is encountered
-def ohai title, *args
-  return if args.length > 0 and args[0].nil?
-  n=`tput cols`.strip.to_i-4
-  n=title.length if ARGV.verbose?
-  puts "\033[0;34m==>\033[0;0;1m #{title[0,n]}\033[0;0m"
-  args.each do |arg|
-    return if arg.nil?
-    puts arg
-  end
+def ohai title, *sput
+  title = title[0, `tput cols`.strip.to_i-4] unless ARGV.verbose?
+  puts "\033[0;34m==>\033[0;0;1m #{title}\033[0;0m"
+  puts *sput unless sput.empty?
 end
 
 # shows a warning in delicious pink
@@ -81,8 +76,13 @@ end
 
 def puts_columns items, cols = 4
   items = items.join("\n") if items.is_a?(Array)
-  width=`stty size`.chomp.split(" ").last
-  IO.popen("pr -#{cols} -t", "w"){|io| io.write(items) }
+  items.concat("\n") unless items.empty?
+  if $stdout.tty?
+    width=`stty size`.chomp.split(" ").last
+    IO.popen("pr -#{cols} -t", "w"){|io| io.write(items) }
+  else
+    items.each { |i| $stdout.write(i) }
+  end
 end
 
 def exec_editor *args

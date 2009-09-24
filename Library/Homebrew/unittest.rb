@@ -12,11 +12,12 @@ require 'download_strategy'
 require 'keg'
 require 'utils'
 require 'brew.h'
-require 'hardware.rb'
+require 'hardware'
+require 'update'
 
 # these are defined in global.rb, but we don't want to break our actual
 # homebrew tree, and we do want to test everything :)
-HOMEBREW_PREFIX=Pathname.new '/tmp/testbrew/prefix'
+HOMEBREW_PREFIX=Pathname.new '/private/tmp/testbrew/prefix'
 HOMEBREW_CACHE=HOMEBREW_PREFIX.parent+"cache"
 HOMEBREW_CELLAR=HOMEBREW_PREFIX.parent+"cellar"
 HOMEBREW_USER_AGENT="Homebrew"
@@ -41,7 +42,8 @@ class MostlyAbstractFormula <Formula
 end
 
 class TestBall <Formula
-  def initialize
+  # name parameter required for some Formula::factory
+  def initialize name=nil
     @url="file:///#{Pathname.new(ABS__FILE__).parent.realpath}/testball-0.1.tbz"
     super "testball"
   end
@@ -82,6 +84,30 @@ class TestScriptFileFormula <ScriptFileFormula
   end
 end
 
+class RefreshBrewMock < RefreshBrew
+  def in_prefix_expect(expect, returns = '')
+    @expect ||= {}
+    @expect[expect] = returns
+  end
+  
+  def `(cmd)
+    if Dir.pwd == HOMEBREW_PREFIX.to_s and @expect.has_key?(cmd)
+      (@called ||= []) << cmd
+      @expect[cmd]
+    else
+      raise "#{inspect} Unexpectedly called backticks in pwd `#{HOMEBREW_PREFIX}' and command `#{cmd}'"
+    end
+  end
+  
+  def expectations_met?
+    @expect.keys == @called
+  end
+  
+  def inspect
+    "#<#{self.class.name} #{object_id}>"
+  end
+end
+
 def nostdout
   if ARGV.include? '-V'
     yield
@@ -98,9 +124,13 @@ def nostdout
 end
 
 module ExtendArgvPlusYeast
-  def stick_an_arg_in_thar
+  def reset
     @named=nil
-    unshift 'foo'
+    @formulae=nil
+    @kegs=nil
+    while ARGV.count > 0
+      ARGV.shift
+    end
   end
 end
 ARGV.extend ExtendArgvPlusYeast
@@ -347,8 +377,9 @@ class BeerTasting <Test::Unit::TestCase
   end
 
   def test_no_ARGV_dupes
-    ARGV.unshift'foo'
-    ARGV.unshift'foo'
+    ARGV.reset
+    ARGV.unshift 'foo'
+    ARGV.unshift 'foo'
     n=0
     ARGV.named.each{|arg| n+=1 if arg == 'foo'}
     assert_equal 1, n
@@ -360,9 +391,10 @@ class BeerTasting <Test::Unit::TestCase
     assert_raises(UsageError) { ARGV.kegs }
     assert ARGV.named_empty?
     
-    (HOMEBREW_CELLAR+'foo'+'0.1').mkpath
+    (HOMEBREW_CELLAR+'mxcl'+'10.0').mkpath
     
-    ARGV.stick_an_arg_in_thar
+    ARGV.reset
+    ARGV.unshift 'mxcl'
     assert_equal 1, ARGV.named.length
     assert_equal 1, ARGV.kegs.length
     assert_raises(FormulaUnavailableError) { ARGV.formulae }
@@ -400,7 +432,7 @@ class BeerTasting <Test::Unit::TestCase
     nostdout do
       assert_nothing_raised do
         f=TestBall.new
-        make 'http://example.com/testball-0.1.tbz'
+        make f.url
         info f.name
         clean f
         prune
@@ -422,7 +454,7 @@ class BeerTasting <Test::Unit::TestCase
 
   def test_arch_for_command
     arches=arch_for_command '/usr/bin/svn'
-    if `sw_vers -productVersion` =~ /10\.(\d)\.(\d+)/ and $1.to_i >= 6
+    if `sw_vers -productVersion` =~ /10\.(\d+)/ and $1.to_i >= 6
       assert_equal 3, arches.count
       assert arches.include?(:x86_64)
     else
@@ -485,4 +517,128 @@ class BeerTasting <Test::Unit::TestCase
     f=MockFormula.new 'http://ftp.mozilla.org/pub/mozilla.org/js/js-1.8.0-rc1.tar.gz'
     assert_equal '1.8.0-rc1', f.version
   end
+  
+  def test_updater_update_homebrew_without_any_changes
+    outside_prefix do
+      updater = RefreshBrewMock.new
+      updater.in_prefix_expect("git checkout master")
+      updater.in_prefix_expect("git pull origin master", "Already up-to-date.\n")
+      
+      assert_equal false, updater.update_from_masterbrew!
+      assert updater.expectations_met?
+      assert updater.updated_formulae.empty?
+    end
+  end
+  
+  def test_updater_update_homebrew_without_formulae_changes
+    outside_prefix do
+      updater = RefreshBrewMock.new
+      updater.in_prefix_expect("git checkout master")
+      output = fixture('update_git_pull_output_without_formulae_changes')
+      updater.in_prefix_expect("git pull origin master", output)
+      
+      assert_equal true, updater.update_from_masterbrew!
+      assert !updater.pending_formulae_changes?
+      assert updater.updated_formulae.empty?
+    end
+  end
+  
+  def test_updater_update_homebrew_with_formulae_changes
+    outside_prefix do
+      updater = RefreshBrewMock.new
+      updater.in_prefix_expect("git checkout master")
+      output = fixture('update_git_pull_output_with_formulae_changes')
+      updater.in_prefix_expect("git pull origin master", output)
+      
+      assert_equal true, updater.update_from_masterbrew!
+      assert updater.pending_formulae_changes?
+      assert_equal %w{ antiword bash-completion xar yajl }, updater.updated_formulae
+    end
+  end
+  
+  def test_updater_returns_current_revision
+    outside_prefix do
+      updater = RefreshBrewMock.new
+      updater.in_prefix_expect('git log -l -1 --pretty=format:%H', 'the-revision-hash')
+      assert_equal 'the-revision-hash', updater.current_revision
+    end
+  end
+  
+  private
+  
+  OUTSIDE_PREFIX = '/tmp'
+  def outside_prefix
+    Dir.chdir(OUTSIDE_PREFIX) { yield }
+  end
+  
+  def fixture(name)
+    self.class.fixture_data[name]
+  end
+  
+  def self.fixture_data
+    unless @fixture_data
+      require 'yaml'
+      @fixture_data = YAML.load(DATA)
+    end
+    @fixture_data
+  end
 end
+
+__END__
+update_git_pull_output_without_formulae_changes: |
+  remote: Counting objects: 58, done.
+  remote: Compressing objects: 100% (35/35), done.
+  remote: Total 39 (delta 20), reused 0 (delta 0)
+  Unpacking objects: 100% (39/39), done.
+  From git://github.com/mxcl/homebrew
+   * branch            master -> FETCH_HEAD
+  Updating 14ef7f9..f414bc8
+  Fast forward
+   Library/Homebrew/ARGV+yeast.rb                |   35 ++--
+   Library/Homebrew/beer_events.rb               |  181 +++++++++++++
+   Library/Homebrew/hardware.rb                  |   71 ++++++
+   Library/Homebrew/hw.model.c                   |   17 --
+   README                                        |  337 +++++++++++++------------
+   bin/brew                                      |  137 ++++++++---
+   40 files changed, 1107 insertions(+), 426 deletions(-)
+   create mode 100644 Library/Homebrew/beer_events.rb
+   create mode 100644 Library/Homebrew/hardware.rb
+   delete mode 100644 Library/Homebrew/hw.model.c
+   delete mode 100644 Library/Homebrew/hw.model.rb
+update_git_pull_output_with_formulae_changes: |
+  remote: Counting objects: 58, done.
+  remote: Compressing objects: 100% (35/35), done.
+  remote: Total 39 (delta 20), reused 0 (delta 0)
+  Unpacking objects: 100% (39/39), done.
+  From git://github.com/mxcl/homebrew
+   * branch            master -> FETCH_HEAD
+  Updating 14ef7f9..f414bc8
+  Fast forward
+   Library/Contributions/brew_bash_completion.sh |    6 +-
+   Library/Formula/antiword.rb                   |   13 +
+   Library/Formula/bash-completion.rb            |   25 ++
+   Library/Formula/xar.rb                        |   19 ++
+   Library/Formula/yajl.rb                       |    2 +-
+   Library/Homebrew/ARGV+yeast.rb                |   35 ++--
+   Library/Homebrew/beer_events.rb               |  181 +++++++++++++
+   Library/Homebrew/hardware.rb                  |   71 ++++++
+   Library/Homebrew/hw.model.c                   |   17 --
+   Library/Homebrew/pathname+yeast.rb            |   28 ++-
+   Library/Homebrew/unittest.rb                  |  106 ++++++++-
+   Library/Homebrew/utils.rb                     |   36 ++-
+   README                                        |  337 +++++++++++++------------
+   bin/brew                                      |  137 ++++++++---
+   40 files changed, 1107 insertions(+), 426 deletions(-)
+   create mode 100644 Library/Formula/antiword.rb
+   create mode 100644 Library/Formula/bash-completion.rb
+   create mode 100644 Library/Formula/ddrescue.rb
+   create mode 100644 Library/Formula/dict.rb
+   create mode 100644 Library/Formula/lua.rb
+   delete mode 100644 Library/Formula/antiword.rb
+   delete mode 100644 Library/Formula/bash-completion.rb
+   delete mode 100644 Library/Formula/xar.rb
+   delete mode 100644 Library/Formula/yajl.rb
+   create mode 100644 Library/Homebrew/beer_events.rb
+   create mode 100644 Library/Homebrew/hardware.rb
+   delete mode 100644 Library/Homebrew/hw.model.c
+   delete mode 100644 Library/Homebrew/hw.model.rb

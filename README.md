@@ -33,7 +33,7 @@ Here's why you may prefer Homebrew to the alternatives:
 5.  Easy package creation  
     Packages are just Ruby scripts. Generate a template with:
 
-       brew mk http://foo.com/tarball-0.8.9.tgz
+       brew create http://foo.com/tarball-0.8.9.tgz
 
     Homebrew will automatically open it for you to tweak with TextMate or
     $EDITOR.
@@ -204,7 +204,12 @@ Uninstallation
     rm -rf Cellar
     brew prune
     rm -rf Library .git
-    rm bin/brew .gitignore README
+    rm bin/brew .gitignore README.md
+
+It is worth noting that if you installed somewhere like /usr/local then these
+uninstallation steps will leave that directory exactly like it was before
+Homebrew was installed. Unless you manually added new stuff there, in which
+case those things will still be there too.
 
 
 Sample Usage

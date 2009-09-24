@@ -5,10 +5,7 @@ class Mysql <Formula
   @homepage='http://dev.mysql.com/doc/refman/5.1/en/'
   @md5='7564d7759a8077b3a0e6190955422287'
 
-  def deps
-    # --without-readline means use system's readline
-    LibraryDep.new 'readline'
-  end
+  depends_on 'readline'
 
   def options
     [
@@ -62,6 +59,8 @@ class Mysql <Formula
     puts "Set up databases with `mysql_install_db`"
     puts "Automatically load on login with "
     puts "  `launchctl load -w #{prefix}/com.mysql.mysqld.plist`"
+    puts "Or start manually with "
+    puts "  `#{prefix}/share/mysql/mysql.server start`"
   end
 
   def startup_plist

@@ -97,8 +97,8 @@ def info name
   user=''
   user=`git config --global github.user`.chomp if system "which git > /dev/null"
   user='mxcl' if user.empty?
-  # FIXME it would be nice if we didn't assume the default branch is masterbrew
-  history="http://github.com/#{user}/homebrew/commits/masterbrew/Library/Formula/#{Formula.path(name).basename}"
+  # FIXME it would be nice if we didn't assume the default branch is master
+  history="http://github.com/#{user}/homebrew/commits/master/Library/Formula/#{Formula.path(name).basename}"
 
   exec 'open', history if ARGV.flag? '--github'
 
@@ -139,8 +139,32 @@ end
 
 def clean f
   Cleaner.new f
-  # remove empty directories TODO Rubyize!
-  `perl -MFile::Find -e"finddepth(sub{rmdir},'#{f.prefix}')"`
+ 
+  # Hunt for empty folders and nuke them unless they are
+  # protected by f.skip_clean?
+  # We want post-order traversal, so put the dirs in a stack
+  # and then pop them off later.
+  paths = []
+  f.prefix.find do |path|
+    paths << path if path.directory?
+  end
+
+  until paths.empty? do
+    d = paths.pop
+    if d.children.empty? and not f.skip_clean? d
+      puts "rmdir: #{d} (empty)" if ARGV.verbose?
+      d.rmdir
+    end
+  end
+end
+
+
+def expand_deps ff
+  deps = []
+  ff.deps.collect do |f|
+    deps += expand_deps(Formula.factory(f))
+  end
+  deps << ff
 end
 
 
