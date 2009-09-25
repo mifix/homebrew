@@ -33,9 +33,7 @@ require 'hardware'
 #    build systems we support to do it.
 
 
-`/usr/bin/sw_vers -productVersion` =~ /(10\.\d+)(\.\d+)?/
-MACOS_VERSION=$1.to_f
-ENV['MACOSX_DEPLOYMENT_TARGET']=$1
+ENV['MACOSX_DEPLOYMENT_TARGET']=MACOS_VERSION.to_s
 
 # ignore existing build vars, thus we should have less bugs to deal with
 ENV['LDFLAGS']=""
@@ -175,14 +173,6 @@ end
 ENV.extend HomebrewEnvExtension
 
 
-# remove MacPorts and Fink from the PATH, this prevents issues like:
-# http://github.com/mxcl/homebrew/issues/#issue/13
-paths=ENV['PATH'].split(':').reject do |p|
-  p.squeeze! '/'
-  p =~ %r[^/opt/local] or p =~ %r[^/sw]
-end
-ENV['PATH']=paths*':'
-
 # Clear CDPATH to avoid make issues that depend on changing directories
 ENV.delete('CDPATH')
 
@@ -195,5 +185,5 @@ def inreplace(path, before, after)
   after.gsub! "$", "\\$"
 
   # FIXME use proper Ruby for teh exceptions!
-  safe_system "perl", "-pi", "-e", "s/#{before}/#{after}/g", path
+  safe_system "/usr/bin/perl", "-pi", "-e", "s/#{before}/#{after}/g", path
 end
