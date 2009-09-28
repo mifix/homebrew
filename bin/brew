@@ -12,11 +12,6 @@ if %w[/ /usr].include? HOMEBREW_PREFIX.to_s then abort <<-EOS
   EOS
 end
 
-# remove MacPorts and Fink from the PATH, this prevents issues like:
-# http://github.com/mxcl/homebrew/issues/#issue/13
-# http://github.com/mxcl/homebrew/issues/#issue/48
-fix_PATH
-
 if MACOS_VERSION < 10.5
   onoe "Homebrew currently requires Leopard or higher"
   abort "Sorry about that, but thanks for your interest anyway!"
@@ -79,13 +74,6 @@ begin
 
       require 'brewkit'
 
-      if ARGV.verbose?
-        ohai "Build Environment"
-        %w[CFLAGS LDFLAGS CPPFLAGS MAKEFLAGS CC CXX MACOSX_DEPLOYMENT_TARGET].each do |f|
-          puts "#{f}: #{ENV[f]}" unless ENV[f].to_s.empty?
-        end
-      end
-      
       if ARGV.interactive? and ARGV.formulae.length > 1
         # the reason for this is interactive mode is a little tricky to do 
         # with more than one formula, AND I can't think of a time where you'd
@@ -94,6 +82,15 @@ begin
         # legitimate use!
         raise "Interactive mode can only be used with one formula argument"
       end
+
+      if ARGV.verbose?
+        ohai "Build Environment"
+        %w[CFLAGS LDFLAGS CPPFLAGS MAKEFLAGS CC CXX MACOSX_DEPLOYMENT_TARGET].each do |f|
+          puts "#{f}: #{ENV[f]}" unless ENV[f].to_s.empty?
+        end
+      end
+
+      warn_about_macports_or_fink # keep warning before dependency resolution
 
       unless ARGV.force?
         unless system "/usr/bin/which -s #{ENV.cc}"
@@ -154,7 +151,7 @@ begin
       unless updater.update_from_masterbrew!
         puts "Already up-to-date."
       else
-        puts "Updated Homebrew from #{old_revision} to #{updater.current_revision}."
+        puts "Updated Homebrew from #{old_revision[0,8]} to #{updater.current_revision[0,8]}."
         if updater.pending_formulae_changes?
           ohai "The following formulae were updated:"
           puts_columns updater.updated_formulae
