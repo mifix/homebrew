@@ -110,9 +110,21 @@ module HomebrewEnvExtension
       self['CC']='gcc-4.0'
       self['CXX']='g++-4.0'
       remove_from_cflags '-march=core2'
+      self.O3
     end
     remove_from_cflags '-msse4.1'
     remove_from_cflags '-msse4.2'
+  end
+  def O3
+    # Sometimes O4 just takes fucking forever
+    remove_from_cflags '-O4'
+    append_to_cflags '-O3'
+  end
+  def gcc_4_2
+    # Sometimes you want to downgrade from LLVM to GCC 4.2
+    self['CC']="gcc-4.2"
+    self['CXX']="g++-4.2"
+    self.O3
   end
   def osx_10_4
     self['MACOSX_DEPLOYMENT_TARGET']=nil
