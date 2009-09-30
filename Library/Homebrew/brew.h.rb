@@ -21,6 +21,8 @@
 #  (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
 #  THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #
+FORMULA_META_FILES = %w[README ChangeLog COPYING LICENSE COPYRIGHT AUTHORS]
+
 def __make url, name
   require 'formula'
 
@@ -287,12 +289,6 @@ def versions_of(keg_name)
 end
 
 
-# Taken from the homebrew wiki (http://wiki.github.com/mxcl/homebrew)
-def unbrewed_files
-  `cd #{HOMEBREW_PREFIX}; find bin etc include lib man share -type f \\( ! -iname ".ds_store" ! -iname "brew" \\)`
-end
-
-
 ########################################################## class PrettyListing
 class PrettyListing
   def initialize path
@@ -306,15 +302,17 @@ class PrettyListing
           (pnn.extname == '.dylib' or pnn.extname == '.pc') and not pnn.symlink?
         end
       else
-        print_dir pn
+        if pn.directory?
+          print_dir pn
+        elsif not FORMULA_META_FILES.include? pn.basename.to_s
+          puts pn
+        end
       end
     end
   end
 
 private
   def print_dir root
-    return unless root.directory?
-
     dirs = []
     remaining_root_files = []
     other = ''
