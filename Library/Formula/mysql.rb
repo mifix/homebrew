@@ -1,9 +1,9 @@
 require 'brewkit'
 
 class Mysql <Formula
-  @url='http://mysql.llarian.net/Downloads/MySQL-5.1/mysql-5.1.39.zip'
   @homepage='http://dev.mysql.com/doc/refman/5.1/en/'
-  @md5='93972105209abdc72c450c0c60f0e404'
+  @url='http://mysql.llarian.net/Downloads/MySQL-5.1/mysql-5.1.39.tar.gz'
+  @md5='55a398daeb69a778fc46573623143268'
 
   depends_on 'readline'
 
@@ -20,6 +20,8 @@ class Mysql <Formula
   end
 
   def install
+    # See: http://dev.mysql.com/doc/refman/5.1/en/configure-options.html
+    # These flags may not apply to gcc 4+
     ENV['CXXFLAGS'] = ENV['CXXFLAGS'].gsub "-fomit-frame-pointer", ""
     ENV['CXXFLAGS'] += " -fno-omit-frame-pointer -felide-constructors"
 
@@ -28,10 +30,9 @@ class Mysql <Formula
       "--without-debug",
       "--disable-dependency-tracking",
       "--prefix=#{prefix}",
-      "--localstatedir=#{var}",
+      "--localstatedir=#{var}/mysql",
       "--with-plugins=innobase,myisam",
       "--with-extra-charsets=complex",
-      "--with-plugins=innobase,myisam",
       "--with-ssl",
       "--enable-assembler",
       "--enable-thread-safe-client",
@@ -43,22 +44,22 @@ class Mysql <Formula
     system "./configure", *configure_args
     system "make install"
 
+    (prefix+'mysql-test').rmtree unless ARGV.include? '--with-tests' # save 66MB!
     (prefix+'sql-bench').rmtree unless ARGV.include? '--with-bench'
-
-    # save 66MB!
-    (prefix+'mysql-test').rmtree unless ARGV.include? '--with-tests'
-
-    var.mkpath
 
     (prefix+'com.mysql.mysqld.plist').write startup_plist
   end
 
-  def caveats
-    puts "Set up databases with `mysql_install_db`"
-    puts "Automatically load on login with "
-    puts "  `launchctl load -w #{prefix}/com.mysql.mysqld.plist`"
-    puts "Or start manually with "
-    puts "  `#{prefix}/share/mysql/mysql.server start`"
+  def caveats; <<-EOS
+Set up databases with:
+    mysql_install_db
+
+Automatically load on login with:
+    launchctl load -w #{prefix}/com.mysql.mysqld.plist
+
+Or start manually with:
+    #{prefix}/share/mysql/mysql.server start
+    EOS
   end
 
   def startup_plist
@@ -78,7 +79,7 @@ class Mysql <Formula
   <key>UserName</key>
   <string>#{`whoami`}</string>
   <key>WorkingDirectory</key>
-  <string>/usr/local</string>
+  <string>#{HOMEBREW_PREFIX}</string>
 </dict>
 </plist>
     EOPLIST

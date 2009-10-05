@@ -88,7 +88,6 @@ class Formula
   def bin; prefix+'bin' end
   def sbin; prefix+'sbin' end
   def doc; prefix+'share'+'doc'+name end
-  def etc; prefix+'etc' end
   def lib; prefix+'lib' end
   def libexec; prefix+'libexec' end
   def man; prefix+'share'+'man' end
@@ -96,8 +95,12 @@ class Formula
   def info; prefix+'share'+'info' end
   def include; prefix+'include' end
   def share; prefix+'share' end
-  def var; prefix+'var' end
 
+  # generally we don't want var stuff inside the keg
+  def var; HOMEBREW_PREFIX+'var' end
+  # configuration needs to be preserved past upgrades
+  def etc; HOMEBREW_PREFIX+'etc' end
+  
   # reimplement if we don't autodetect the download strategy you require
   def download_strategy
     case url
@@ -106,8 +109,9 @@ class Formula
     when %r[^svn://] then SubversionDownloadStrategy
     when %r[^git://] then GitDownloadStrategy
     when %r[^http://(.+?\.)?googlecode\.com/svn] then SubversionDownloadStrategy
+    when %r[^http://(.+?\.)?sourceforge\.net/svnroot/] then SubversionDownloadStrategy
     when %r[^http://svn.apache.org/repos/] then SubversionDownloadStrategy
-    else HttpDownloadStrategy
+    else CurlDownloadStrategy
     end
   end
 
